@@ -5,6 +5,22 @@ pipeline {
     args '--user root -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/jenkins/tools:/var/lib/jenkins/tools:ro'
   }
 }
+  stage('Prepare Environment') {
+  steps {
+    sh '''
+      apk add --no-cache openjdk17-jre docker-cli git
+
+      echo "Java:"
+      java -version
+
+      echo "Docker:"
+      docker --version
+
+      echo "Git:"
+      git --version
+    '''
+  }
+}
   stages {
     stage('Checkout') {
       steps {
