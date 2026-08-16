@@ -1,32 +1,36 @@
 pipeline {
   agent {
-  docker {
-    image 'node:20-alpine'
-    args '--user root -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/jenkins/tools:/var/lib/jenkins/tools:ro'
+    docker {
+      image 'node:20-alpine'
+      args '--user root -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/jenkins/tools:/var/lib/jenkins/tools:ro'
+    }
   }
-}
-  stage('Prepare Environment') {
-  steps {
-    sh '''
-      apk add --no-cache openjdk17-jre docker-cli git
 
-      echo "Java:"
-      java -version
-
-      echo "Docker:"
-      docker --version
-
-      echo "Git:"
-      git --version
-    '''
-  }
-}
   stages {
+
+    stage('Prepare Environment') {
+      steps {
+        sh '''
+          apk add --no-cache openjdk17-jre docker-cli git
+
+          echo "Java:"
+          java -version
+
+          echo "Docker:"
+          docker --version
+
+          echo "Git:"
+          git --version
+        '''
+      }
+    }
+
     stage('Checkout') {
       steps {
         sh 'echo "Starting build process..."'
       }
     }
+
     stage('Build and Test') {
       steps {
         sh '''
@@ -36,40 +40,46 @@ pipeline {
         '''
       }
     }
-    
+
     stage('SonarQube Analysis') {
-  steps {
-    script {
-      def scannerHome = tool 'SonarScanner'
+      steps {
+        script {
+          def scannerHome = tool 'SonarScanner'
 
-      withSonarQubeEnv('sonarqube') {
-        sh """
-          cd node-app
+          withSonarQubeEnv('sonarqube') {
+            sh """
+              cd node-app
 
-          ${scannerHome}/bin/sonar-scanner \
-            -Dsonar.projectKey=node-express-app \
-            -Dsonar.projectName="Node Express App" \
-            -Dsonar.sources=. \
-            -Dsonar.exclusions=node_modules/**,coverage/** \
-            -Dsonar.host.url=\$SONAR_HOST_URL
-        """
+              ${scannerHome}/bin/sonar-scanner \
+                -Dsonar.projectKey=node-express-app \
+                -Dsonar.projectName="Node Express App" \
+                -Dsonar.sources=. \
+                -Dsonar.exclusions=node_modules/**,coverage/** \
+                -Dsonar.host.url=\$SONAR_HOST_URL
+            """
+          }
+        }
       }
     }
-  }
-}
 
     stage('Build and Push Docker Image') {
       environment {
         DOCKER_IMAGE = "ajilash25/ultimate-cicd:${BUILD_NUMBER}"
       }
+
       steps {
         script {
-            sh 'docker build -t ${DOCKER_IMAGE} node-app'
-            def dockerImage = docker.image("${DOCKER_IMAGE}")
-            docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
-                dockerImage.push()
-                dockerImage.push("latest")
-            }
+          sh 'docker build -t ${DOCKER_IMAGE} node-app'
+
+          def dockerImage = docker.image("${DOCKER_IMAGE}")
+
+          docker.withRegistry(
+            'https://index.docker.io/v1/',
+            "docker-cred"
+          ) {
+            dockerImage.push()
+            dockerImage.push("latest")
+          }
         }
       }
     }
@@ -79,28 +89,33 @@ pipeline {
         GIT_REPO_NAME = "node-js-app-pipeline"
         GIT_USER_NAME = "Ajilash25"
       }
+
       steps {
         withCredentials([
-            usernamePassword(
-                credentialsId: 'git-hub',
-                usernameVariable: 'GITHUB_USERNAME',
-                passwordVariable: 'GITHUB_TOKEN'
-            )
+          usernamePassword(
+            credentialsId: 'git-hub',
+            usernameVariable: 'GITHUB_USERNAME',
+            passwordVariable: 'GITHUB_TOKEN'
+          )
         ]) {
-            sh '''
-                rm -rf repo-temp
-                git clone https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git repo-temp
-                cd repo-temp
-                
-                git config user.email "ajilashedward25@gmail.com"
-                git config user.name "${GIT_USER_NAME}"
+          sh '''
+            rm -rf repo-temp
 
-                sed -i "s|image: .*|image: ajilash25/ultimate-cicd:${BUILD_NUMBER}|g" node-app-manifests/deployment.yml
+            git clone https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git repo-temp
 
-                git add node-app-manifests/deployment.yml
-                git commit -m "Update static site image tag to ${BUILD_NUMBER} [skip ci]" || echo "No changes to commit"
-                git push origin main
-            '''
+            cd repo-temp
+
+            git config user.email "ajilashedward25@gmail.com"
+            git config user.name "${GIT_USER_NAME}"
+
+            sed -i "s|image: .*|image: ajilash25/ultimate-cicd:${BUILD_NUMBER}|g" node-app-manifests/deployment.yml
+
+            git add node-app-manifests/deployment.yml
+
+            git commit -m "Update Node app image tag to ${BUILD_NUMBER} [skip ci]" || echo "No changes to commit"
+
+            git push origin main
+          '''
         }
       }
     }
